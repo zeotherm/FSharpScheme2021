@@ -1,5 +1,11 @@
 ﻿// Learn more about F# at http://fsharp.org
 // See the 'F# Tutorial' project for more help.
+open NUnit.Framework
+open FsUnit
+
+[<Test>]
+let ``test hello``() = 
+    5 + 1 |> should equal 6
 
 [<EntryPoint>]
 let main argv = 
