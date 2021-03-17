@@ -45,8 +45,8 @@ parseExprRef := choice [parseAtom
 
 let readExpr input = 
     match run (spaces >>. parseExpr) input with 
-    | Failure (_, err, _) -> sprintf "No match: %s" (err.ToString())
-    | Success _ -> "Found Value"
+    | Failure (_, err, _) -> sprintf "No match: %s" (err.ToString()) |> LispString
+    | Success (e, _, _) -> e //sprintf "Found Value: %s" (e.ToString())
 
 let checkResult v r = match r with
                       | ParserResult.Success(e, _, _) -> e |> should equal v
