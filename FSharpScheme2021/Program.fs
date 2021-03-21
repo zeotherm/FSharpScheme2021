@@ -11,12 +11,10 @@ let ``test hello``() =
 [<EntryPoint>]
 let main argv = 
 
-    let inp = [|"(+ 2 2)"|]
-    inp 
-    |> Array.tryHead 
-    |> Option.defaultValue "" 
-    |> readExpr 
-    |> eval 
-    |> (fun v -> v.ToString()) 
-    |> printfn "%s\n"
+    let inp = [|"(saywhat? 2)"|]
+    let result = inp |> Array.tryHead |> Option.defaultValue "" |> readExpr |> Result.bind eval
+    
+    match result with 
+    | Result.Ok v -> printfn "evaluated: %s" (v.ToString())
+    | Result.Error e -> printfn "error: %s" (e.ToString())
     0 // return an integer exit code

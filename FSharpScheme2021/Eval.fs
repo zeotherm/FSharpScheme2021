@@ -7,31 +7,50 @@ open LispTypes
 
 let rec unpackNum = 
     function
-    | LispNumber v -> v
-    | LispString s -> match run pint64 s with
-                        | Success (v, _, _) -> v
-                        | Failure (err, _, _) -> 0L  // parse failed use 0
+    | LispNumber v -> Result.Ok v
+    | LispString s as v -> match run pint64 s with
+                        | Success (v, _, _) -> Result.Ok v
+                        | Failure (err, _, _) -> Result.Error(TypeMismatch("number", v))
     | LispList [n] -> unpackNum n
-    | _ -> 0L
+    | v -> TypeMismatch("number", v) |> throwError
 
-let numericBinOp op args = args |> List.map unpackNum |> List.reduce op |> LispNumber
+//let numericBinOp op args = args |> List.map unpackNum |> List.reduce op |> LispNumber
 
-let primitives: Map<string, List<LispVal> -> LispVal> = 
+let numericBinOp op args =
+    match args with
+    | [] -> NumArgs (2, []) |> throwError
+    | [_] as v -> NumArgs (2, v) |> throwError
+    | v ->
+         let argsParsed: ThrowsError<List<int64>> = args |> List.map unpackNum |> List.sequence
+         Result.bind (fun (head::tail) -> List.foldM op head tail)
+                      argsParsed  |> Result.map LispNumber
+
+let safeMath op a b = op a b |> Result.Ok
+
+let primitives: Map<string, List<LispVal> -> ThrowsError<LispVal>> = 
     Map.empty.
-        Add("+", numericBinOp (+)).
-        Add("-", numericBinOp (-)).
-        Add("*", numericBinOp (*)).
-        Add("/", numericBinOp (/)).
-        Add("mod", numericBinOp (%)).
-        Add("quotient", numericBinOp (/)).
-        Add("remainder", numericBinOp (fun a b -> (divRem a b) |> snd))
+        Add("+", numericBinOp (safeMath (+))).
+        Add("-", numericBinOp (safeMath (-))).
+        Add("*", numericBinOp (safeMath (*))).
+        Add("/", numericBinOp (safeMath (/))).
+        Add("mod", numericBinOp (safeMath (%))).
+        Add("quotient", numericBinOp (safeMath (/))).
+        Add("remainder", numericBinOp (fun a b -> (divRem a b) |> snd |> Result.Ok))
 
 let rec eval = 
     function
-    | LispString _ as v -> v
-    | LispNumber _ as v -> v
-    | LispBool _ as v -> v
-    | LispList [LispAtom "quote"; v ] -> v
-    | LispList (LispAtom func:: args) -> args |> List.map eval |> apply func
-and apply func args = 
-    Map.tryFind func primitives |> Option.map (fun f -> f args) |> Option.defaultWith (fun () -> LispBool false )
+    | LispString _ as v -> Result.Ok v
+    | LispNumber _ as v -> Result.Ok v
+    | LispBool _ as v -> Result.Ok v
+    | LispList [LispAtom "quote"; v ] -> Result.Ok v
+    | LispList (LispAtom func::args) -> args |> mapM eval |> Result.bind (apply func)
+and mapM fn =
+    function
+    | [] -> Result.Ok []
+    | x :: xs -> match fn x with
+                 | Result.Error e -> Result.Error e
+                 | Result.Ok e -> mapM fn xs |> Result.map (fun es -> e::es)
+and apply func args =
+    Map.tryFind func primitives
+    |> Option.toResultWith (NotFunction("Unrecognized primitive function args", func))
+    |> Result.bind  (fun f -> f args) 
