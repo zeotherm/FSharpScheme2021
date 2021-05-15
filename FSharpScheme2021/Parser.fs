@@ -44,6 +44,7 @@ parseExprRef := choice [parseAtom
                         (between (pchar '(') (pchar ')') (attempt parseList <|> parseDottedList))]
 
 let readExpr input = 
+    //let ast = (spaces >>. parseExpr .>> eof) input
     match run (spaces >>. parseExpr .>> eof) input with 
     | Failure (err, _, _) -> sprintf "No match: %s" err |> ParseError |> throwError
     | Success (e, _, _) -> Result.Ok e //e //sprintf "Found Value: %s" (e.ToString())
