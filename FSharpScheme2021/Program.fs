@@ -4,6 +4,7 @@ open NUnit.Framework
 open FsUnit
 open Parser
 open Eval
+open Repl
 [<Test>]
 let ``test hello``() = 
     5 + 1 |> should equal 6
@@ -29,5 +30,7 @@ let main argv =
                 "(car (cdr '(a simple test)))";
                 "(cons '(this is) 'test)"
                 |]
-    Array.iter interpret inp
+    //Array.iter interpret inp
+    runRepl()
+
     0 // return an integer exit code
