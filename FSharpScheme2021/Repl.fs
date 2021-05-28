@@ -9,13 +9,14 @@ let readPrompt (prompt: string) =
     let v = Console.ReadLine()
     if isNull v then "" else v
 
-let readAndEval = readExpr >> Result.bind eval
-let evalString expr = 
-    match readAndEval expr with
+let readAndEval env = readExpr >> Result.bind (eval env)
+
+let evalString env expr = 
+    match readAndEval env expr with
     | Ok v -> v.ToString()
     | Error e -> sprintf "Eval failed: %s" (e.ToString())
 
-let evalAndPrint expr = evalString expr |> Console.WriteLine
+let evalAndPrint env expr = evalString env expr |> Console.WriteLine
 
 let rec until pred prompt action = 
     let input = prompt()
@@ -23,6 +24,8 @@ let rec until pred prompt action =
         action input
         until pred prompt action
 
+let runOne expr = evalAndPrint (nullEnv()) expr
+
 let runRepl () =
-    until ((=) "quit") (fun () -> readPrompt "Lisp>>> ") evalAndPrint
+    until ((=) "quit") (fun () -> readPrompt "Lisp>>> ") (evalAndPrint (nullEnv()))
 

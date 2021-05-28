@@ -37,6 +37,9 @@ type LispVal =
             | (LispDottedList (h1, t1), LispDottedList(h2, t2)) -> compareList h1 h2 && t1 = t2
             | _ -> false
 
+// I don't like the use of the mutable variables here, that is a serious code smell
+type Env = System.Collections.Generic.Dictionary<string, LispVal ref>
+
 type LispError = 
     | NumArgs of int32 * LispVal list
     | TypeMismatch of string * LispVal

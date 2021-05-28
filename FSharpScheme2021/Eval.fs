@@ -4,6 +4,8 @@ open FSharpPlus.Data
 open FParsec
 open LispTypes
 
+let nullEnv () = new Env()
+
 let rec unpackNum = 
     function
     | LispNumber v -> Result.Ok v
@@ -122,7 +124,31 @@ let rec equalFn =
 and equal2 x y = 
     equalFn [x; y] |> (=) (Result.Ok(LispBool true))
 
-        
+let isBound (env: Env) var = env.ContainsKey(var)        
+
+let getVar (env: Env) var = 
+    let mutable ret = ref (LispBool false)
+
+    if env.TryGetValue(var, &ret) then
+        Result.Ok !ret
+    else
+        UnboundVar("Getting an unbound variable", var) |> throwError
+
+let setVar (env: Env) var value = 
+    if isBound env var then
+        env.[var] := value
+        Result.Ok value
+    else
+        UnboundVar("Setting an unbound variable", var) |> throwError
+
+let defineVar (env: Env) var value = 
+    env.[var] <- ref value
+    Result.Ok value
+
+let bindVars (env: Env) (vars: Map<string, LispVal>) = 
+    for kv in vars do
+        env.[kv.Key] <- ref kv.Value
+    env
 
 let primitives: Map<string, List<LispVal> -> ThrowsError<LispVal>> = 
     Map.empty
@@ -165,17 +191,21 @@ let rec applyEval func args =
     |> Option.toResultWith (NotFunction("Unrecognized primitive function args", func))
     |> Result.bind (fun f -> f args) 
 
-let rec eval = 
+let rec eval (env: Env)= 
     function
     | LispString _ as v -> Result.Ok v
     | LispNumber _ as v -> Result.Ok v
     | LispBool _ as v -> Result.Ok v
+    | LispAtom id -> getVar env id
     | LispList [LispAtom "quote"; v ] -> Result.Ok v
     | LispList [LispAtom "if"; pred; conseq; alt] ->
-        eval pred
+        eval env pred
         |> Result.bind
             (fun v ->
                 match v with
-                | LispBool false -> eval alt
-                | _ -> eval conseq)
-    | LispList (LispAtom func::args) -> args |> mapM2 eval |> Result.bind (applyEval func)
+                | LispBool false -> eval env alt
+                | _ -> eval env conseq)
+    | LispList [LispAtom "set!"; LispAtom var; form] -> eval env form |> Result.bind (setVar env var)
+    | LispList [LispAtom "define"; LispAtom var; form] -> eval env form |> Result.bind (defineVar env var)
+    | LispList (LispAtom func::args) -> args |> mapM2 (eval env) |> Result.bind (applyEval func)
+    | badform -> BadSpecialForm("Unrecognized special form", badform) |> throwError

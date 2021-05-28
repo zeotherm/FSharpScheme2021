@@ -15,7 +15,7 @@ let interpret (expr: string) : Unit =
     match ast with 
     | Result.Ok a -> printfn "%A" a
     | Result.Error err -> printfn "%A" err
-    let result = ast |> Result.bind eval
+    let result = ast |> Result.bind (eval (nullEnv()))
     match result with 
     | Result.Ok v -> printfn "evaluated: %s" (v.ToString())
     | Result.Error e -> printfn "error: %s" (e.ToString())
