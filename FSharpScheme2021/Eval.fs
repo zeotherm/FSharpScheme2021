@@ -10,8 +10,8 @@ let rec unpackNum =
     function
     | LispNumber v -> Result.Ok v
     | LispString s as v -> match run pint64 s with
-                        | Success (v, _, _) -> Result.Ok v
-                        | Failure (err, _, _) -> Result.Error(TypeMismatch("number", v))
+                           | Success (v, _, _) -> Result.Ok v
+                           | Failure (err, _, _) -> Result.Error(TypeMismatch("number", v))
     | LispList [n] -> unpackNum n
     | v -> TypeMismatch("number", v) |> throwError
 
@@ -150,6 +150,15 @@ let bindVars (env: Env) (vars: Map<string, LispVal>) =
         env.[kv.Key] <- ref kv.Value
     env
 
+let makeFunc varargs env (args: LispVal list) body =
+    LispFunc((List.map (fun p -> p.ToString()) args), varargs, body, env)
+    |> Result.Ok
+    
+let makeNormalFunc (envType: Env) args body = makeFunc None envType args body
+    
+let makeVarArgs = 
+    (makeFunc << Some << (fun v -> v.ToString()))
+
 let primitives: Map<string, List<LispVal> -> ThrowsError<LispVal>> = 
     Map.empty
         .Add("+", numericBinOp (safeMath (+)))
@@ -179,13 +188,6 @@ let primitives: Map<string, List<LispVal> -> ThrowsError<LispVal>> =
         .Add("eq?", eqv)
         .Add("equal?", equalFn)
 
-let rec mapM2 fn =
-    function
-    | [] -> Result.Ok []
-    | x :: xs -> match fn x with
-                 | Result.Error e -> Result.Error e
-                 | Result.Ok e -> mapM2 fn xs |> Result.map (fun es -> e::es)
-
 let rec applyEval func args =
     Map.tryFind func primitives
     |> Option.toResultWith (NotFunction("Unrecognized primitive function args", func))
@@ -207,5 +209,61 @@ let rec eval (env: Env)=
                 | _ -> eval env conseq)
     | LispList [LispAtom "set!"; LispAtom var; form] -> eval env form |> Result.bind (setVar env var)
     | LispList [LispAtom "define"; LispAtom var; form] -> eval env form |> Result.bind (defineVar env var)
-    | LispList (LispAtom func::args) -> args |> mapM2 (eval env) |> Result.bind (applyEval func)
+    | LispList (LispAtom "define" :: LispList (LispAtom var :: args) :: body) ->
+        makeNormalFunc env args body |> Result.bind (defineVar env var)
+    | LispList (LispAtom "define" :: LispDottedList (LispAtom var :: args, LispAtom vargs) :: body) ->
+        makeVarArgs vargs env args body |> Result.bind (defineVar env var)
+    | LispList (LispAtom "lambda" :: LispList p :: body) ->
+        makeNormalFunc env p body
+    | LispList (LispAtom "lambda" :: LispDottedList (LispAtom var :: args, LispAtom vargs) :: body) ->
+        makeVarArgs vargs env args body |> Result.bind (defineVar env var)
+    | LispList (LispAtom "lambda" :: (LispAtom vargs) :: body) ->
+        makeVarArgs vargs env [] body
+    | LispList (func::args) -> //args |> mapM (eval env) |> Result.bind (applyEval func)
+        monad {
+            let! fn = eval env func
+            let! argVals = mapM (eval env) args
+            let! ret = apply fn argVals
+            return ret
+        }
     | badform -> BadSpecialForm("Unrecognized special form", badform) |> throwError
+and mapM fn = 
+    function
+    | [] -> Result.Ok []
+    | x :: xs ->
+        match fn x with
+        | Result.Error e -> Result.Error e
+        | Result.Ok v -> mapM fn xs |> Result.map (fun vs -> v::vs)
+and apply func args = 
+    match func with
+    | LispPrimitiveFunc fn -> fn args
+    | LispFunc (fparams, vargs, body, closure) ->
+        if fparams.Length <> args.Length && vargs = None then
+            NumArgs(fparams.Length, args) |> throwError
+        else
+            let remainingArgs = List.drop fparams.Length args
+
+            let evalBody (env: Env) = 
+                evalAllReturnLast env body
+
+            let bindVarArgs arg env =
+                match arg with 
+                | Some argName -> bindVars env (Map.empty.Add(argName, LispList remainingArgs))
+                | None -> env
+
+            let newEnv = 
+                List.zip fparams (List.take fparams.Length args)
+                |> Map.ofList
+                |> bindVars (new Env(closure))
+                |> bindVarArgs vargs
+            evalBody newEnv
+    | _ -> DefaultError "runtime error" |> throwError
+and evalAllReturnLast env = 
+    function
+    | [x] -> eval env x
+    | x::xs -> match eval env x with
+               | Result.Error _ as v -> v
+               | Result.Ok(_) -> evalAllReturnLast env xs
+
+let primitiveBindings () = 
+    Map.mapValues LispPrimitiveFunc primitives |> bindVars (nullEnv ())

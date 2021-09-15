@@ -24,8 +24,8 @@ let rec until pred prompt action =
         action input
         until pred prompt action
 
-let runOne expr = evalAndPrint (nullEnv()) expr
+let runOne expr = evalAndPrint (primitiveBindings ()) expr
 
 let runRepl () =
-    until ((=) "quit") (fun () -> readPrompt "Lisp>>> ") (evalAndPrint (nullEnv()))
+    until ((=) "quit") (fun () -> readPrompt "Lisp>>> ") (evalAndPrint (primitiveBindings ()))
 
